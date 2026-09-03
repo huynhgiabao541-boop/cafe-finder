@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Search, Map as MapIcon, SlidersHorizontal, List, Loader2 } from "lucide-react";
+import { Search, Map as MapIcon, SlidersHorizontal, List, Loader2, MapPin } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import VenueCard from "@/components/VenueCard";
@@ -16,10 +16,41 @@ function MapUpdater({ center }) {
 
 export default function Explore() {
   const [viewMode, setViewMode] = useState("split");
-  const [searchQuery, setSearchQuery] = useState("Hà Nội");
+  const [selectedProv, setSelectedProv] = useState("01"); // Default: Hanoi
+  const [selectedWard, setSelectedWard] = useState("");
+  const [provSearch, setProvSearch] = useState("Thành phố Hà Nội");
+  const [wardSearch, setWardSearch] = useState("");
+  const [showProvList, setShowProvList] = useState(false);
+  const [showWardList, setShowWardList] = useState(false);
   const [venues, setVenues] = useState([]);
   const [loading, setLoading] = useState(false);
   const [mapCenter, setMapCenter] = useState([21.0285, 105.8542]); // Hanoi
+  const [provinces, setProvinces] = useState([]);
+  const [wards, setWards] = useState([]);
+
+  // v2 = dữ liệu hành chính sau sáp nhập 07/2025 (chỉ còn 2 cấp: Tỉnh/TP -> Phường/Xã)
+  const PROVINCES_API = "https://provinces.open-api.vn/api/v2";
+
+  useEffect(() => {
+    fetch(`${PROVINCES_API}/p/`)
+      .then(res => res.json())
+      .then(data => setProvinces(data))
+      .catch(err => console.error(err));
+  }, []);
+
+  useEffect(() => {
+    if (selectedProv) {
+      fetch(`${PROVINCES_API}/p/${selectedProv}?depth=2`)
+        .then(res => res.json())
+        .then(data => {
+          setWards(data.wards || []);
+          setSelectedWard(""); // Reset ward selection
+          fetchVenues(data.name); // Search full province first
+        })
+        .catch(err => console.error(err));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedProv]);
 
   // haversine distance in km
   const getDistanceKm = (lat1, lon1, lat2, lon2) => {
@@ -123,32 +154,88 @@ out center 150;
     }
   };
 
-  useEffect(() => {
-    fetchVenues("Hà Nội");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
-  const handleSearch = (e) => {
-    if (e.key === 'Enter') {
-      fetchVenues(searchQuery);
-    }
-  };
+
+  const filteredProvs = provinces.filter(p => p.name.toLowerCase().includes(provSearch.toLowerCase()));
+  const filteredWards = wards.filter(w => w.name.toLowerCase().includes(wardSearch.toLowerCase()));
 
   return (
     <div className="h-full flex flex-col bg-slate-50 dark:bg-slate-950">
       {/* Search Header */}
       <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 p-4 shrink-0 z-10 shadow-sm">
-        <div className="flex gap-2 max-w-7xl mx-auto">
+        <div className="flex flex-col sm:flex-row gap-2 max-w-7xl mx-auto">
+          
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <Input
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={handleSearch}
-              placeholder="Nhập thành phố để tìm quán cafe (VD: Hà Nội, Hồ Chí Minh) và nhấn Enter..."
-              className="pl-9 bg-slate-100/50 dark:bg-slate-800/50 border-none focus-visible:ring-1 focus-visible:ring-amber-500 rounded-xl"
+            <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 z-10" />
+            <Input 
+               value={provSearch}
+               onChange={(e) => {
+                 setProvSearch(e.target.value);
+                 setShowProvList(true);
+               }}
+               onFocus={() => setShowProvList(true)}
+               onBlur={() => setTimeout(() => setShowProvList(false), 200)}
+               placeholder="Tìm Tỉnh/Thành phố..."
+               className="pl-9 bg-slate-100/50 dark:bg-slate-800/50 border-none focus-visible:ring-1 focus-visible:ring-amber-500 rounded-xl h-10 w-full"
             />
+            {showProvList && filteredProvs.length > 0 && (
+              <div className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-lg z-50 max-h-[300px] overflow-y-auto py-1">
+                {filteredProvs.map(p => (
+                  <div 
+                    key={p.code} 
+                    className="px-4 py-2 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer text-sm"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      setProvSearch(p.name);
+                      setSelectedProv(p.code.toString());
+                      setWardSearch("");
+                      setShowProvList(false);
+                    }}
+                  >
+                    {p.name}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
+          
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 z-10" />
+            <Input 
+               value={wardSearch}
+               onChange={(e) => {
+                 setWardSearch(e.target.value);
+                 setShowWardList(true);
+               }}
+               onFocus={() => setShowWardList(true)}
+               onBlur={() => setTimeout(() => setShowWardList(false), 200)}
+               placeholder="Tìm Phường/Xã..."
+               className="pl-9 bg-slate-100/50 dark:bg-slate-800/50 border-none focus-visible:ring-1 focus-visible:ring-amber-500 rounded-xl h-10 w-full"
+               disabled={wards.length === 0}
+            />
+            {showWardList && filteredWards.length > 0 && (
+              <div className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-lg z-50 max-h-[300px] overflow-y-auto py-1">
+                {filteredWards.map(w => (
+                  <div 
+                    key={w.code} 
+                    className="px-4 py-2 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer text-sm"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      const val = w.code.toString();
+                      setWardSearch(w.name);
+                      setSelectedWard(val);
+                      setShowWardList(false);
+                      const pName = provinces.find(p => p.code.toString() === selectedProv)?.name || "";
+                      if (pName && w.name) fetchVenues(`${w.name}, ${pName}`);
+                    }}
+                  >
+                    {w.name}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           <Button variant="outline" size="icon" className="shrink-0 rounded-xl border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400">
             <SlidersHorizontal className="w-4 h-4" />
           </Button>
